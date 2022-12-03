@@ -1,0 +1,521 @@
+
+```{r}
+library(mlbench) #for data set
+library(caret)
+library(tidyverse)
+
+library(caret)
+library(ggplot2)
+library(dplyr)
+library(corrplot)
+library(tidyverse)
+library(LiblineaR)
+library(recipes)
+library(themis)
+library(kernlab)
+library(pROC)
+library(rpart)
+library(ROSE)
+library(h2o)
+library(glmnet)
+library(xgboost)
+library(PRROC)
+library(caret)
+library(neuralnet)
+library(e1071)
+library(DMwR)
+library(nnet)
+library(gbm)
+library(readr)
+library(randomForest)
+library(rminer)
+```
+
+```{r}
+ori_df<- read.csv("C:/Users/13862/Desktop/FITE7404_Group_Project/archive/processed_application_data.csv")
+# ori_df<- read.csv("C:/Users/13862/Desktop/processed.csv")
+sum(is.na(ori_df))
+str(ori_df)
+```
+
+```{r}
+categories <- unique(ori_df[3,]) 
+categories
+```
+
+```{r}
+num_df <- ori_df
+class <- sapply(ori_df, class)
+for(i in colnames(ori_df)){
+  if (class[i]=="character") {
+    print(unique(num_df[[i]]))
+num_df[[i]] <- as.numeric( factor(num_df[[i]]) )
+}
+}
+  
+```
+
+```{r}
+minmax <- function(x, na.rm = TRUE) {
+    return((x- min(x)) /(max(x)-min(x)))
+}
+
+num_df$TARGET<- factor(make.names(num_df$TARGET), labels = c("non_fraud", "fraud"))
+num_df<-subset(num_df, select = -c(SK_ID_CURR))
+# num_df <- num_df[c( 'TARGET', 'AMT_INCOME_TOTAL', 'AMT_CREDIT', 'AMT_ANNUITY', 'AMT_GOODS_PRICE', 'NAME_INCOME_TYPE', 'HOUR_APPR_PROCESS_START', 'ORGANIZATION_TYPE')]
+
+# num_df <- num_df[c('TARGET','NAME_CONTRACT_TYPE', 'NAME_EDUCATION_TYPE', 'FLAG_MOBIL', 'FLAG_EMP_PHONE', 'FLAG_CONT_MOBILE', 'WEEKDAY_APPR_PROCESS_START', 'REG_REGION_NOT_LIVE_REGION', 'REG_REGION_NOT_WORK_REGION', 'LIVE_REGION_NOT_WORK_REGION', 'ORGANIZATION_TYPE',
+# 'FLAG_DOCUMENT_2','FLAG_DOCUMENT_3','FLAG_DOCUMENT_4','FLAG_DOCUMENT_5','FLAG_DOCUMENT_6','FLAG_DOCUMENT_7','FLAG_DOCUMENT_8',
+# 'FLAG_DOCUMENT_9','FLAG_DOCUMENT_10','FLAG_DOCUMENT_11','FLAG_DOCUMENT_12','FLAG_DOCUMENT_13','FLAG_DOCUMENT_14','FLAG_DOCUMENT_15',
+# 'FLAG_DOCUMENT_16','FLAG_DOCUMENT_17','FLAG_DOCUMENT_18','FLAG_DOCUMENT_19','FLAG_DOCUMENT_20','FLAG_DOCUMENT_2')]
+
+summary(num_df)
+```
+
+```{r}
+set.seed(33) 
+partition <- caret::createDataPartition(y=num_df$TARGET, p=0.8, list=FALSE) 
+df_train <- num_df[partition,]
+df_test <- num_df[-partition,]
+
+train_scaling = preProcess(df_train, method = "range")
+scaled_df_train = predict(train_scaling, df_train)
+scaled_df_test = predict(train_scaling, df_test)
+summary(scaled_df_train)
+
+print(nrow(scaled_df_train)/(nrow(scaled_df_test)+nrow(scaled_df_train)))
+
+```
+
+
+```{r}
+# set.seed(33) 
+# partition <- caret::createDataPartition(y=num_df$TARGET, p=0.8, list=FALSE) 
+# df_train <- num_df[partition,]
+# df_test <- num_df[-partition,]
+# 
+# train_scaling = preProcess(df_train, method = "range")
+# scaled_df_train = predict(train_scaling, df_train)
+# scaled_df_test = predict(train_scaling, df_test)
+# summary(scaled_df_train)
+# 
+# print(nrow(scaled_df_train)/(nrow(scaled_df_test)+nrow(scaled_df_train)))
+
+```
+
+```{r}
+df_up_train <-  upSample(x = scaled_df_train[,-ncol(scaled_df_train)],y = scaled_df_train$TARGET, yname = "TARGET")
+table(df_up_train$TARGET)
+
+df_ovun_train <- ovun.sample(TARGET ~ ., data  = scaled_df_train,method = "under",p=0.20)$data                         
+table(df_ovun_train$TARGET)
+
+# df_smote_train <- SMOTE(TARGET ~ ., data  = scaled_df_train, perc.over = 300, k = 5, perc.under = 100)
+# table(df_smote_train$TARGET)
+```
+
+```{r}
+train_rf <-  randomForest(TARGET ~ ., data=df_up_train ,mtry = 75, ntree=100, importance = TRUE, trControl = trainControl(method = "cv", number = 10))
+
+train_rf$importance
+
+prediction_probability_rf <- predict(train_rf, scaled_df_test, type="prob")
+# prediction_probability_rf
+fraud_probs_rf <- predict(train_rf, scaled_df_test, type="prob")[,2]
+# fraud_probs_rf
+non_fraud_probs_rf <- predict(train_rf, scaled_df_test, type="prob")[,1]
+# non_fraud_probs_rf
+
+pred_rf <- factor(ifelse(fraud_probs_rf >= .5, "fraud", "non_fraud"))
+# prediction_raw_rf <- predict(train_rf, scaled_df_test, type="raw")
+prediction_raw_rf <- pred_rf 
+prediction_raw_rf<-relevel(prediction_raw_rf,ref=c("fraud"))
+
+
+
+```
+
+```{r}
+scaled_df_test$TARGET<-relevel(scaled_df_test$TARGET,ref=c("fraud"))
+
+confusionMatrix(data = pred_rf, reference = factor(scaled_df_test$TARGET,levels=c("fraud","non_fraud")))
+
+dat_rf<-data.frame(obs=scaled_df_test$TARGET,pred=prediction_raw_rf,prediction_probability_rf)
+
+
+twoClassSummary(dat_rf,lev=levels(scaled_df_test$TARGET))
+prSummary(dat_rf, lev=levels(scaled_df_test$TARGET))
+
+positive_rf<-fraud_probs_rf[scaled_df_test$TARGET==c("fraud")]
+negative_rf<-fraud_probs_rf[scaled_df_test$TARGET==c("non_fraud")]
+
+PRC_rf <- pr.curve(positive_rf, negative_rf, curve=TRUE)
+plot(PRC_rf)
+
+ROC_rf<-roc.curve(positive_rf, negative_rf, curve=TRUE)
+plot(ROC_rf)
+```
+```{r}
+train_nb <- train(TARGET ~., data = df_up_train, method="naive_bayes",trControl=trainControl(method = "cv", number = 5))
+
+```
+```{r}
+# nrow(varImp(train_nb)$importance)
+varimp = varImp(train_nb)
+
+rownames(varimp$importance)
+varimp$importance
+```
+
+```{r}
+train_tree <- train(TARGET ~., data = df_ovun_train,method = "rpart",
+                   trControl = trainControl(method = "cv", number = 5))
+
+```
+
+```{r}
+prediction_probability_tree <- predict(train_tree, scaled_df_test, type="prob")
+prediction_probability_tree
+fraud_probs_tree <- predict(train_tree, scaled_df_test, type="prob")[,2]
+fraud_probs_tree
+non_fraud_probs_tree <- predict(train_tree, scaled_df_test, type="prob")[,1]
+non_fraud_probs_tree 
+```
+
+```{r}
+pred_tree <- factor(ifelse(fraud_probs_tree >= .5, "fraud", "non_fraud"))
+prediction_raw_tree <- predict(train_tree, scaled_df_test, type="raw")
+prediction_raw_tree<-relevel(prediction_raw_tree,ref=c("fraud"))
+
+scaled_df_test$TARGET<-relevel(scaled_df_test$TARGET,ref=c("fraud"))
+
+confusionMatrix(data = pred_tree, reference = factor(scaled_df_test$TARGET,levels=c("fraud","non_fraud")))
+
+dat_tree<-data.frame(obs=scaled_df_test$TARGET,pred=prediction_raw_tree,prediction_probability_tree)
+
+
+twoClassSummary(dat_tree,lev=levels(scaled_df_test$TARGET))
+prSummary(dat_tree, lev=levels(scaled_df_test$TARGET))
+
+positive_tree<-fraud_probs_tree[scaled_df_test==c("fraud")]
+negative_tree<-fraud_probs_tree[scaled_df_test==c("non_fraud")]
+
+PRC_tree <- pr.curve(positive_tree, negative_tree, curve=TRUE)
+plot(PRC_tree)
+
+ROC_tree<-roc.curve(positive_tree, negative_tree, curve=TRUE)
+plot(ROC_tree)
+
+```
+```{r}
+train_linear <- train(TARGET ~., data = df_ovun_train,method = "glm",
+                   trControl = trainControl(method = "cv", number = 5))
+
+```
+
+```{r}
+
+# train_linear <- train(TARGET ~., data = df_ovun_train, method = "glm",
+#                    trControl = trainControl(method = "cv", number = 5))
+
+train_linear <- glm(TARGET ~., data = df_ovun_train, family = "binomial")
+                    # ,trControl = trainControl(method = "cv", number = 5))
+
+```
+
+```{r}
+summary(train_linear)
+```
+
+```{r}
+prediction_probability_linear <- predict(train_linear, scaled_df_test, type = "response")
+prediction_probability_linear
+prediction_linear <- ifelse(prediction_probability_linear >0.5, 1, 0)
+# table(prediction_probability_linear$TARGET, predict_reg)
+
+fraud_probs_linear <- predict(train_linear, scaled_df_test,type = "response")[2]
+fraud_probs_linear
+non_fraud_probs_linear <- predict(train_linear, scaled_df_test, type = "response")[1]
+non_fraud_probs_linear
+
+pred_linear <- factor(ifelse(prediction_probability_linear >= .5, "fraud", "non_fraud"))
+# prediction_raw_linear <- predict(train_linear, scaled_df_test, type="raw")
+# prediction_raw_linear<-relevel(prediction_raw_linear,ref=c("fraud"))
+
+# scaled_df_test$TARGET<-relevel(scaled_df_test$TARGET,ref=c("fraud"))
+
+confusionMatrix(data = pred_linear, reference = factor(scaled_df_test$TARGET,levels=c("fraud","non_fraud")))
+
+dat_linear<-data.frame(obs=scaled_df_test$TARGET,pred=pred_linear,prediction_probability_linear)
+
+
+# dat_linear<-data.frame(obs=scaled_df_test$TARGET,pred=prediction_raw_linear,prediction_probability_linear)
+# 
+# 
+# twoClassSummary(dat_linear,lev=levels(scaled_df_test$TARGET))
+# prSummary(dat_linear, lev=levels(scaled_df_test$TARGET))
+
+# positive_linear<-fraud_probs_linear[scaled_df_test==c("fraud")]
+# negative_linear<-fraud_probs_linear[scaled_df_test==c("non_fraud")]
+# 
+# PRC_linear <- pr.curve(positive_linear, negative_linear, curve=TRUE)
+# plot(PRC_linear)
+# 
+# ROC_linear<-roc.curve(positive_linear, negative_linear, curve=TRUE)
+# plot(ROC_linear)
+# 
+# ROCPred <- prediction(prediction_linear, scaled_df_test$TARGET) 
+# ROCPer <- performance(ROCPred, measure = "tpr", 
+#                              x.measure = "fpr")
+#    
+# auc <- performance(ROCPred, measure = "auc")
+# auc <- auc@y.values[[1]]
+# auc
+#    
+# # Plotting curve
+# plot(ROCPer)
+# plot(ROCPer, colorize = TRUE, 
+#      print.cutoffs.at = seq(0.1, by = 0.1), 
+#      main = "ROC CURVE")
+# abline(a = 0, b = 1)
+```
+
+
+
+```{r}
+prediction_probability_linear <- predict(train_linear, scaled_df_test, type="prob")
+prediction_probability_linear
+fraud_probs_linear <- predict(train_linear, scaled_df_test, type="prob")[,2]
+fraud_probs_linear
+non_fraud_probs_linear <- predict(train_linear, scaled_df_test, type="prob")[,1]
+non_fraud_probs_linear
+
+pred_linear <- factor(ifelse(fraud_probs_linear >= .5, "fraud", "non_fraud"))
+prediction_raw_linear <- predict(train_linear, scaled_df_test, type="raw")
+prediction_raw_linear<-relevel(prediction_raw_linear,ref=c("fraud"))
+
+scaled_df_test$TARGET<-relevel(scaled_df_test$TARGET,ref=c("fraud"))
+
+confusionMatrix(data = pred_linear, reference = factor(scaled_df_test$TARGET,levels=c("fraud","non_fraud")))
+
+dat_linear<-data.frame(obs=scaled_df_test$TARGET,pred=prediction_raw_linear,prediction_probability_linear)
+
+
+twoClassSummary(dat_linear,lev=levels(scaled_df_test$TARGET))
+prSummary(dat_linear, lev=levels(scaled_df_test$TARGET))
+
+positive_linear<-fraud_probs_linear[scaled_df_test==c("fraud")]
+negative_linear<-fraud_probs_linear[scaled_df_test==c("non_fraud")]
+
+PRC_linear <- pr.curve(positive_linear, negative_linear, curve=TRUE)
+plot(PRC_linear)
+
+ROC_linear<-roc.curve(positive_linear, negative_linear, curve=TRUE)
+plot(ROC_linear)
+```
+
+
+```{r}
+train_pam <- train(TARGET ~., data = df_ovun_train,method = "pam",
+                   trControl = trainControl(method = "cv", number = 5))
+```
+
+```{r}
+prediction_probability_pam <- predict(train_pam, scaled_df_test, type="prob")
+prediction_probability_pam
+fraud_probs_pam <- predict(train_pam, scaled_df_test, type="prob")[,2]
+fraud_probs_pam
+non_fraud_probs_pam <- predict(train_pam, scaled_df_test, type="prob")[,1]
+non_fraud_probs_pam
+
+pred_pam <- factor(ifelse(fraud_probs_pam >= .5, "fraud", "non_fraud"))
+prediction_raw_pam <- predict(train_pam, scaled_df_test, type="raw")
+prediction_raw_pam<-relevel(prediction_raw_pam,ref=c("fraud"))
+
+scaled_df_test$TARGET<-relevel(scaled_df_test$TARGET,ref=c("fraud"))
+
+confusionMatrix(data = pred_pam, reference = factor(scaled_df_test$TARGET,levels=c("fraud","non_fraud")))
+
+dat_pam<-data.frame(obs=scaled_df_test$TARGET,pred=prediction_raw_pam,prediction_probability_pam)
+
+
+twoClassSummary(dat_pam,lev=levels(scaled_df_test$TARGET))
+prSummary(dat_pam, lev=levels(scaled_df_test$TARGET))
+
+positive_pam<-fraud_probs_pam[scaled_df_test==c("fraud")]
+negative_pam<-fraud_probs_pam[scaled_df_test==c("non_fraud")]
+
+PRC_pam <- pr.curve(positive_pam, negative_pam, curve=TRUE)
+plot(PRC_pam)
+
+ROC_pam<-roc.curve(positive_pam, negative_pam, curve=TRUE)
+plot(ROC_pam)
+```
+
+```{r}
+train_nb <- train(TARGET ~., data = df_ovun_train,method = "naive_bayes",
+                   trControl = trainControl(method = "cv", number = 5))
+
+```
+
+```{r}
+summary(train_nb)
+```
+```{r}
+prediction_probability_nb <- predict(train_nb, scaled_df_test, type="prob")
+prediction_probability_nb
+fraud_probs_nb <- predict(train_nb, scaled_df_test, type="prob")[,2]
+fraud_probs_nb
+non_fraud_probs_nb <- predict(train_nb, scaled_df_test, type="prob")[,1]
+non_fraud_probs_nb
+
+pred_nb <- factor(ifelse(fraud_probs_nb >= .5, "fraud", "non_fraud"))
+prediction_raw_nb <- predict(train_nb, scaled_df_test, type="raw")
+prediction_raw_nb<-relevel(prediction_raw_nb,ref=c("fraud"))
+
+scaled_df_test$TARGET<-relevel(scaled_df_test$TARGET,ref=c("fraud"))
+
+confusionMatrix(data = pred_nb, reference = factor(scaled_df_test$TARGET,levels=c("fraud","non_fraud")))
+
+dat_nb<-data.frame(obs=scaled_df_test$TARGET,pred=prediction_raw_nb,prediction_probability_nb)
+
+
+twoClassSummary(dat_nb,lev=levels(scaled_df_test$TARGET))
+prSummary(dat_nb, lev=levels(scaled_df_test$TARGET))
+
+positive_nb<-fraud_probs_nb[scaled_df_test==c("fraud")]
+negative_nb<-fraud_probs_nb[scaled_df_test==c("non_fraud")]
+
+PRC_nb <- pr.curve(positive_nb, negative_nb, curve=TRUE)
+plot(PRC_nb)
+
+ROC_nb<-roc.curve(positive_nb, negative_nb, curve=TRUE)
+plot(ROC_nb)
+```
+
+
+```{r}
+ANN_model =neuralnet (TARGET ~., data = df_ovun_train, linear.output=FALSE)
+plot(ANN_model)
+
+predANN=compute(ANN_model, scaled_df_test)
+resultANN=predANN$net.result
+resultANN=ifelse(resultANN>0.5,1,0)
+```
+
+```{r}
+# svm(formula = Purchased ~ .,
+#                  data = training_set,
+#                  type = 'C-classification',
+#                  kernel = 'linear')
+
+train_linearsvm <- svm(TARGET ~., data = df_ovun_train, type = 'C-classification',kernel = 'linear',
+                   trControl = trainControl(method = "cv", number = 5))
+
+```
+
+```{r}
+prediction_probability_linearsvm <- predict(train_linearsvm, scaled_df_test, type="prob")
+prediction_probability_linearsvm
+fraud_probs_linearsvm <- predict(train_linearsvm, scaled_df_test, type="prob")[,2]
+fraud_probs_linearsvm
+non_fraud_probs_linearsvm <- predict(train_linearsvm, scaled_df_test, type="prob")[,1]
+non_fraud_probs_linearsvm
+
+pred_linearsvm <- factor(ifelse(fraud_probs_linearsvm >= .5, "fraud", "non_fraud"))
+prediction_raw_linearsvm <- predict(train_linearsvm, scaled_df_test, type="raw")
+prediction_raw_linearsvm<-relevel(prediction_raw_linearsvm,ref=c("fraud"))
+
+scaled_df_test$TARGET<-relevel(scaled_df_test$TARGET,ref=c("fraud"))
+
+confusionMatrix(data = pred_linearsvm, reference = factor(scaled_df_test$TARGET,levels=c("fraud","non_fraud")))
+
+dat_linearsvm<-data.frame(obs=scaled_df_test$TARGET,pred=prediction_raw_linearsvm,prediction_probability_linearsvm)
+
+
+twoClassSummary(dat_linearsvm,lev=levels(scaled_df_test$TARGET))
+prSummary(dat_linearsvm, lev=levels(scaled_df_test$TARGET))
+
+positive_linearsvm<-fraud_probs_linearsvm[scaled_df_test==c("fraud")]
+negative_linearsvm<-fraud_probs_linearsvm[scaled_df_test==c("non_fraud")]
+
+PRC_linearsvm <- pr.curve(positive_linearsvm, negative_linearsvm, curve=TRUE)
+plot(PRC_linearsvm)
+
+ROC_linearsvm<-roc.curve(positive_linearsvm, negative_linearsvm, curve=TRUE)
+plot(ROC_linearsvm)
+```
+
+```{r}
+train_polyrsvm <- svm(TARGET ~., data = df_ovun_train, type = 'polynomial',
+                   trControl = trainControl(method = "cv", number = 5))
+```
+
+```{r}
+prediction_probability_polyrsvm <- predict(train_polyrsvm, scaled_df_test, type="prob")
+prediction_probability_polyrsvm
+fraud_probs_polyrsvm <- predict(train_polyrsvm, scaled_df_test, type="prob")[,2]
+fraud_probs_polyrsvm
+non_fraud_probs_polyrsvm <- predict(train_polyrsvm, scaled_df_test, type="prob")[,1]
+non_fraud_probs_polyrsvm
+
+pred_polyrsvm <- factor(ifelse(fraud_probs_polyrsvm >= .5, "fraud", "non_fraud"))
+prediction_raw_polyrsvm <- predict(train_polyrsvm, scaled_df_test, type="raw")
+prediction_raw_polyrsvm<-relevel(prediction_raw_polyrsvm,ref=c("fraud"))
+
+scaled_df_test$TARGET<-relevel(scaled_df_test$TARGET,ref=c("fraud"))
+
+confusionMatrix(data = pred_polyrsvm, reference = factor(scaled_df_test$TARGET,levels=c("fraud","non_fraud")))
+
+dat_polyrsvm<-data.frame(obs=scaled_df_test$TARGET,pred=prediction_raw_polyrsvm,prediction_probability_polyrsvm)
+
+
+twoClassSummary(dat_polyrsvm,lev=levels(scaled_df_test$TARGET))
+prSummary(dat_polyrsvm, lev=levels(scaled_df_test$TARGET))
+
+positive_polyrsvm<-fraud_probs_polyrsvm[scaled_df_test==c("fraud")]
+negative_polyrsvm<-fraud_probs_polyrsvm[scaled_df_test==c("non_fraud")]
+
+PRC_polyrsvm <- pr.curve(positive_polyrsvm, negative_polyrsvm, curve=TRUE)
+plot(PRC_polyrsvm)
+
+ROC_polyrsvm<-roc.curve(positive_polyrsvm, negative_polyrsvm, curve=TRUE)
+plot(ROC_polyrsvm)
+```
+
+
+```{r}
+train_rf <- train(TARGET ~., data = df_ovun_train, method = 'parRF', trControl = trainControl(method = "cv", number = 5))
+```
+
+```{r}
+prediction_probability_rf <- predict(train_rf, scaled_df_test, type="prob")
+prediction_probability_rf
+fraud_probs_rf <- predict(train_rf, scaled_df_test, type="prob")[,2]
+fraud_probs_rf
+non_fraud_probs_rf <- predict(train_rf, scaled_df_test, type="prob")[,1]
+non_fraud_probs_rf
+
+pred_rf <- factor(ifelse(fraud_probs_rf >= .5, "fraud", "non_fraud"))
+prediction_raw_rf <- predict(train_rf, scaled_df_test, type="raw")
+prediction_raw_rf<-relevel(prediction_raw_rf,ref=c("fraud"))
+
+scaled_df_test$TARGET<-relevel(scaled_df_test$TARGET,ref=c("fraud"))
+
+confusionMatrix(data = pred_rf, reference = factor(scaled_df_test$TARGET,levels=c("fraud","non_fraud")))
+
+dat_rf<-data.frame(obs=scaled_df_test$TARGET,pred=prediction_raw_rf,prediction_probability_rf)
+
+
+twoClassSummary(dat_rf,lev=levels(scaled_df_test$TARGET))
+prSummary(dat_rf, lev=levels(scaled_df_test$TARGET))
+
+positive_rf<-fraud_probs_rf[scaled_df_test==c("fraud")]
+negative_rf<-fraud_probs_rf[scaled_df_test==c("non_fraud")]
+
+PRC_rf <- pr.curve(positive_rf, negative_rf, curve=TRUE)
+plot(PRC_rf)
+
+ROC_rf<-roc.curve(positive_rf, negative_rf, curve=TRUE)
+plot(ROC_rf)
+```

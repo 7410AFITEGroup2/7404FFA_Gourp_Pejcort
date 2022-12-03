@@ -1,0 +1,425 @@
+```{r}
+library(ggvis)
+library(GGally) 
+library(ggplot2)
+library(dplyr)
+library(data.table)
+library(magrittr)
+library("ggpubr")
+library(lattice)
+library(reshape2)
+library("Hmisc")
+library(tidyverse) 
+library(RNHANES)
+library(caret)
+library(gridExtra)
+library(factoextra)
+```
+
+```{r}
+dataset = read.csv("C:/Users/13862/Desktop/FITE7404_Group_Project/archive/processed_application_data.csv", header=TRUE, stringsAsFactors=FALSE)
+
+dataset$DAYS_EMPLOYED <- abs(dataset$DAYS_EMPLOYED)
+dataset$DAYS_BIRTH <- abs(dataset$DAYS_BIRTH)
+dataset$DAYS_REGISTRATION  <- abs(dataset$DAYS_REGISTRATION)
+dataset$DAYS_ID_PUBLISH <- abs(dataset$DAYS_ID_PUBLISH)
+
+print(str(dataset))
+print(summary(dataset))
+```
+
+```{r}
+Fraud_size = 350
+noneFraud_size = 350
+datasetFraud=dataset[dataset$TARGET == 1, ]
+datasetnotFraud=dataset[dataset$TARGET == 0, ]
+
+Fraudindex = sample(1:nrow(datasetFraud), Fraud_size, replace = FALSE, prob = NULL)
+noneFraudindex = sample(1:nrow(datasetnotFraud),noneFraud_size, replace = FALSE, prob = NULL)
+sampleddatasetFraud = datasetFraud[Fraudindex,]
+sampleddatasetnotFraud = datasetnotFraud[noneFraudindex,]
+sampleddataset = rbind(sampleddatasetFraud,sampleddatasetnotFraud)
+
+```
+
+```{r, fig.width = 16, fig.height = 15}
+num_df <- sampleddataset[c("TARGET","AMT_INCOME_TOTAL","AMT_CREDIT","AMT_ANNUITY","AMT_GOODS_PRICE","DAYS_BIRTH","DAYS_EMPLOYED",'HOUR_APPR_PROCESS_START')]
+
+visualsampleddataset = num_df
+my_cols <- character(nrow(visualsampleddataset))
+my_shapes <- character(nrow(visualsampleddataset))
+
+my_cols[] <- "black"
+my_cols[visualsampleddataset$TARGET == 1] = "Fraud"
+my_cols[visualsampleddataset$TARGET == 0] = "Normal"
+
+# shapes = c(16, 18) 
+my_shapes[] <- 16
+my_shapes[visualsampleddataset$TARGET == 1] = 17
+my_shapes[visualsampleddataset$TARGET == 0] = 18
+my_shapes = as.numeric(my_shapes)
+
+# 3 place the legend in the ggpairs grid with putPlot
+
+
+
+ggpairs(visualsampleddataset[1:7],mapping=aes(color=my_cols), legend = 1) + theme(legend.position = "bottom") 
+```
+
+```{r, fig.width = 22, fig.height = 20}
+num_df <- sampleddataset[c("TARGET","AMT_INCOME_TOTAL","AMT_CREDIT","AMT_ANNUITY","AMT_GOODS_PRICE","DAYS_BIRTH","DAYS_EMPLOYED",'HOUR_APPR_PROCESS_START', 'DAYS_REGISTRATION',  'DAYS_ID_PUBLISH', "REGION_POPULATION_RELATIVE")]
+# 
+# ("TARGET","DAYS_BIRTH","DAYS_EMPLOYED",'HOUR_APPR_PROCESS_START', 'DAYS_REGISTRATION',  'DAYS_ID_PUBLISH' ,"AMT_INCOME_TOTAL", "AMT_CREDIT", "AMT_ANNUITY",'AMT_GOODS_PRICE', "NAME_FAMILY_STATUS","NAME_HOUSING_TYPE", "REGION_POPULATION_RELATIVE","DAYS_BIRTH","DAYS_EMPLOYED","DAYS_REGISTRATION",  "DAYS_ID_PUBLISH")
+
+visualsampleddataset = num_df
+my_cols <- character(nrow(visualsampleddataset))
+my_shapes <- character(nrow(visualsampleddataset))
+
+my_cols[] <- "black"
+my_cols[visualsampleddataset$TARGET == 1] = "Fraud"
+my_cols[visualsampleddataset$TARGET == 0] = "Normal"
+
+# shapes = c(16, 18) 
+my_shapes[] <- 16
+my_shapes[visualsampleddataset$TARGET == 1] = 17
+my_shapes[visualsampleddataset$TARGET == 0] = 18
+my_shapes = as.numeric(my_shapes)
+
+# 3 place the legend in the ggpairs grid with putPlot
+
+
+
+ggpairs(visualsampleddataset[1:11],mapping=aes(color=my_cols), legend = 1) + theme(legend.position = "bottom") 
+```
+
+
+```{r}
+options(stringsAsFactors = FALSE)
+hTARGETindex = sample(1:nrow(datasetFraud), 1000, replace = FALSE, prob = NULL)
+hisnoneFraudindex = sample(1:nrow(datasetnotFraud),1000, replace = FALSE, prob = NULL)
+hissampleddatasetFraud = datasetFraud[hTARGETindex,]
+hissampleddatasetnotFraud = datasetnotFraud[hisnoneFraudindex,]
+hissampleddataset = rbind(hissampleddatasetFraud,hissampleddatasetnotFraud)
+hissampleddataset = as.list(hissampleddataset)
+hissampleddataset = data.frame(hissampleddataset, stringsAsFactors = FALSE)
+# hissampleddataset$TARGET <- as.character(hissampleddataset$TARGET)str(hissampleddataset)
+hissampleddataset <- hissampleddataset %>% mutate(TARGET = ifelse(TARGET==1, "Fraud", "Normal"))
+# hissampleddataset %>% mutate(TARGET = replace(TARGET, TARGET==1, "Fraud"),
+#              TARGET = replace(TARGET, TARGET==0, "Normal"))
+
+# hissampleddataset$TARGET <- as.character(hissampleddataset$TARGET)
+
+norm_hissampleddataset <- hissampleddataset[c("TARGET","DAYS_BIRTH","DAYS_EMPLOYED",'HOUR_APPR_PROCESS_START', 'DAYS_REGISTRATION',  'DAYS_ID_PUBLISH' ,"AMT_INCOME_TOTAL", "AMT_CREDIT", "AMT_ANNUITY",'AMT_GOODS_PRICE', "NAME_FAMILY_STATUS","NAME_HOUSING_TYPE", "REGION_POPULATION_RELATIVE","DAYS_BIRTH","DAYS_EMPLOYED","DAYS_REGISTRATION",  "DAYS_ID_PUBLISH")]
+
+
+
+norm_hissampleddataset_scaling = preProcess(norm_hissampleddataset, method = "range")
+norm_hissampleddataset = predict(norm_hissampleddataset_scaling, norm_hissampleddataset)
+
+histri_amount <- ggplot(norm_hissampleddataset, aes(x = REGION_POPULATION_RELATIVE, fill=TARGET, colour = TARGET)) +
+  geom_histogram(alpha = 0.5, position = "identity") + ggtitle("DAYS EMPLOYED Distribution") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# histri_amount <- ggplot(hissampleddataset, aes(x = DAYS_EMPLOYED, fill=TARGET, colour = TARGET)) +
+  # geom_histogram(alpha = 0.5, position = "identity") + ggtitle("Amount Distribution") +
+  # theme(plot.title = element_text(hjust = 0.5))
+
+histri_step <- ggplot(hissampleddataset, aes(x = AMT_GOODS_PRICE, fill=TARGET, colour = TARGET)) + 
+  geom_histogram(alpha = 0.5, position = "identity") + ggtitle("AMT CREDIT Distribution") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+grid.arrange(histri_step, histri_amount)
+ 
+# ggplot(sampleddataset, aes(x=amount, fill=TARGET)) +
+#     geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity') +
+#     scale_fill_manual(values=c("#69b3a2", "#404080")) + labs(fill="")
+# Overlaid histograms
+# ggplot(sampleddataset, aes(x=amount, color=TARGET)) +
+#   geom_histogram(fill="white", alpha=0.5, position="identity")
+
+# ggplot(data = datasetFraud['type']) + geom_bar(mapping = aes(x = type))
+ 
+```
+
+```{r}
+options(stringsAsFactors = FALSE)
+hTARGETindex = sample(1:nrow(datasetFraud), 1000, replace = FALSE, prob = NULL)
+hisnoneFraudindex = sample(1:nrow(datasetnotFraud),1000, replace = FALSE, prob = NULL)
+hissampleddatasetFraud = datasetFraud[hTARGETindex,]
+hissampleddatasetnotFraud = datasetnotFraud[hisnoneFraudindex,]
+hissampleddataset = rbind(hissampleddatasetFraud,hissampleddatasetnotFraud)
+hissampleddataset = as.list(hissampleddataset)
+hissampleddataset = data.frame(hissampleddataset, stringsAsFactors = FALSE)
+# hissampleddataset$TARGET <- as.character(hissampleddataset$TARGET)str(hissampleddataset)
+hissampleddataset <- hissampleddataset %>% mutate(TARGET = ifelse(TARGET==1, "Fraud", "Normal"))
+# hissampleddataset %>% mutate(TARGET = replace(TARGET, TARGET==1, "Fraud"),
+#              TARGET = replace(TARGET, TARGET==0, "Normal"))
+
+# hissampleddataset$TARGET <- as.character(hissampleddataset$TARGET)
+
+norm_hissampleddataset <- hissampleddataset[c("TARGET","DAYS_BIRTH","DAYS_EMPLOYED",'HOUR_APPR_PROCESS_START', 'DAYS_REGISTRATION',  'DAYS_ID_PUBLISH' ,"AMT_INCOME_TOTAL", "AMT_CREDIT", "AMT_ANNUITY",'AMT_GOODS_PRICE', "NAME_FAMILY_STATUS","NAME_HOUSING_TYPE", "REGION_POPULATION_RELATIVE","DAYS_BIRTH","DAYS_EMPLOYED","DAYS_REGISTRATION",  "DAYS_ID_PUBLISH")]
+
+norm_hissampleddataset$DAYS_ID_PUBLISH <- abs(norm_hissampleddataset$DAYS_ID_PUBLISH)
+
+norm_hissampleddataset_scaling = preProcess(norm_hissampleddataset, method = "range")
+norm_hissampleddataset = predict(norm_hissampleddataset_scaling, norm_hissampleddataset)
+
+histri_amount <- ggplot(norm_hissampleddataset, aes(x = DAYS_ID_PUBLISH, fill=TARGET, colour = TARGET)) +
+  geom_histogram(alpha = 0.5, position = "identity") + ggtitle("DAYS ID PUBLISH") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# histri_amount <- ggplot(hissampleddataset, aes(x = DAYS_EMPLOYED, fill=TARGET, colour = TARGET)) +
+  # geom_histogram(alpha = 0.5, position = "identity") + ggtitle("Amount Distribution") +
+  # theme(plot.title = element_text(hjust = 0.5))
+
+histri_step <- ggplot(hissampleddataset, aes(x = AMT_CREDIT, fill=TARGET, colour = TARGET)) + 
+  geom_histogram(alpha = 0.5, position = "identity") + ggtitle("AMT CREDIT Distribution") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+grid.arrange(histri_step, histri_amount)
+ 
+# ggplot(sampleddataset, aes(x=amount, fill=TARGET)) +
+#     geom_histogram( color="#e9ecef", alpha=0.6, position = 'identity') +
+#     scale_fill_manual(values=c("#69b3a2", "#404080")) + labs(fill="")
+# Overlaid histograms
+# ggplot(sampleddataset, aes(x=amount, color=TARGET)) +
+#   geom_histogram(fill="white", alpha=0.5, position="identity")
+
+# ggplot(data = datasetFraud['type']) + geom_bar(mapping = aes(x = type))
+ 
+```
+
+```{r}
+histri_amount
+```
+
+```{r}
+
+boxplot_step <- hissampleddataset %>%    
+     ggplot(aes(x = TARGET, y = log(AMT_INCOME_TOTAL) , fill = TARGET)) + geom_boxplot(alpha = .3) 
+
+boxplot_amount <- hissampleddataset %>%    
+     ggplot(aes(x = TARGET, y = log(AMT_CREDIT) , fill = TARGET)) + geom_boxplot(alpha = .3) 
+
+boxplot_oldbalanceOrg <- hissampleddataset %>%    
+     ggplot(aes(x = TARGET, y = log(AMT_ANNUITY) , fill = TARGET)) + geom_boxplot(alpha = .3) 
+
+boxplot_newbalanceOrig <- hissampleddataset %>%    
+     ggplot(aes(x = TARGET, y = log(AMT_GOODS_PRICE) , fill = TARGET)) + geom_boxplot(alpha = .3) 
+
+
+grid.arrange(boxplot_step, boxplot_amount, boxplot_oldbalanceOrg, boxplot_newbalanceOrig)
+ 
+```
+
+```{r}
+boxplot_oldbalanceDest <- norm_hissampleddataset %>%    
+     ggplot(aes(x = TARGET, y = DAYS_BIRTH , fill = TARGET)) + geom_boxplot(alpha = .3) 
+
+boxplot_newbalanceDest <- norm_hissampleddataset %>%    
+     ggplot(aes(x = TARGET, y = DAYS_REGISTRATION , fill = TARGET)) + geom_boxplot(alpha = .3) 
+
+boxplot_HOUR_APPR_PROCESS_START <- norm_hissampleddataset %>%    
+     ggplot(aes(x = TARGET, y = HOUR_APPR_PROCESS_START , fill = TARGET)) + geom_boxplot(alpha = .3) 
+     
+boxplot_DAYS_ID_PUBLISH  <- norm_hissampleddataset %>%    
+     ggplot(aes(x = TARGET, y = DAYS_ID_PUBLISH , fill = TARGET)) + geom_boxplot(alpha = .3) 
+
+grid.arrange( boxplot_oldbalanceDest, boxplot_newbalanceDest, boxplot_HOUR_APPR_PROCESS_START, boxplot_DAYS_ID_PUBLISH)
+```  
+
+```{r}
+ggplot(data = datasetnotFraud['type']) + geom_bar(mapping = aes(x = type)) + ggtitle("Type Count without Fraud")+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+fraudpie <- data.frame(
+  group=c('CASH_OUT','TRANSFER'),
+  value=c(4116, 4097 ))
+
+fraud_pie_type <-ggplot(fraudpie , aes(x = "", y = value, fill = group)) +
+  geom_col() +
+  coord_polar(theta = "y") + ggtitle("Type Count with Fraud")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+fraudnotpie <- data.frame(
+  group=c('CASH_IN', 'CASH_OUT',    'DEBIT',  'PAYMENT', 'TRANSFER' ),
+  value=c( 1399284, 2233384,   41432,  2151495,   528812))
+
+nonfraud_pie_type <- ggplot(fraudnotpie , aes(x = "", y = value, fill = group)) +
+  geom_col() +
+  coord_polar(theta = "y") + ggtitle("Type Count without Fraud")+
+  theme(plot.title = element_text(hjust = 0.5))
+
+grid.arrange(fraud_pie_type, nonfraud_pie_type)
+
+```
+
+```{r}
+
+```
+
+```{r}
+corr_mat <- round(cor(visualsampleddataset), 2)
+ 
+# reduce the size of correlation matrix
+melted_corr_mat <- melt(corr_mat)
+# head(melted_corr_mat)
+ 
+# plotting the correlation heatmap
+
+ggplot(data = melted_corr_mat, aes(x=Var1, y=Var2,
+                                   fill=value)) +
+geom_tile() +  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + ggtitle("Correlation0p[")+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+sampleddataset$TARGET <- cut(sampleddataset$TARGET,breaks=c(-0.5, 0.5, 1.5),labels=c('Normal', "fraud"))
+ggplot(data=sampleddataset, aes(step, amount, colour = TARGET)) +
+  geom_point()
+```
+
+```{r}
+ggscatter(sampleddataset, x = "step", y = "amount", 
+          add = "reg.line", conf.int = TRUE, 
+          cor.coef = TRUE, cor.method = "pearson",
+          xlab = "Miles/(US) gallon", ylab = "Weight (1000 lbs)")
+
+
+```
+
+```{r}
+resH <- rcorr(as.matrix(visualsampleddataset))
+resH
+```
+
+Clearing missing data:
+there is no missing data in the dataset.
+tidyverse)and outlier
+
+```{r}
+sum(is.na(dataset))
+numdataset = subset(dataset, select = -c(type, nameOrig, nameDest) )
+zscorevisualsampleddataset = sapply(numdataset, function(numdataset) (numdataset-mean(numdataset))/sd(numdataset))
+zscorevisualsampleddataset
+```
+
+```{r}
+threshold = 3
+dfzscorevisualsampleddataset = data.frame(zscorevisualsampleddataset)
+outlierstep = zscorevisualsampleddataset[which(abs(dfzscorevisualsampleddataset$step) > threshold), ]
+outlieramount = zscorevisualsampleddataset[which(abs(dfzscorevisualsampleddataset$amount) > threshold), ]
+outlieroldbalanceOrg = zscorevisualsampleddataset[which(abs(dfzscorevisualsampleddataset$oldbalanceOrg) > threshold), ]
+outliernewbalanceOrig = zscorevisualsampleddataset[which(abs(dfzscorevisualsampleddataset$newbalanceOrig) > threshold), ]
+outlieroldbalanceDest = zscorevisualsampleddataset[which(abs(dfzscorevisualsampleddataset$oldbalanceDest) > threshold), ]
+outliernewbalanceDest = zscorevisualsampleddataset[which(abs(dfzscorevisualsampleddataset$newbalanceDest) > threshold), ]
+# z = np.abs(stats.zscore(outlier_column))
+#     # sns.set_style('whitegrid')
+# 
+#     outlier_loc = np.where(z > threshold)
+#     # find the outlier value given its index
+#     outlier_by_Z_Score = outlier_column[outlier_loc]
+```
+It is discovered that the percentage of fraud data is much higher than in the original datraset, hence the outliers are set to be valid data and replaced with upper and lower bound of the data.
+```{r}
+upperamount = mean(visualsampleddataset$amount) + sd(visualsampleddataset$amount) * threshold
+upperstep = mean(visualsampleddataset$step) + sd(visualsampleddataset$step) * threshold
+upperoldbalanceOrg = mean(visualsampleddataset$oldbalanceOrg) + sd(visualsampleddataset$oldbalanceOrg) * threshold
+uppernewbalanceOrig = mean(visualsampleddataset$newbalanceOrig) + sd(visualsampleddataset$newbalanceOrig) * threshold
+upperoldbalanceDest = mean(visualsampleddataset$oldbalanceDest) + sd(visualsampleddataset$oldbalanceDest) * threshold
+uppernewbalanceDest = mean(visualsampleddataset$newbalanceDest) + sd(visualsampleddataset$newbalanceDest) * threshold
+
+zscorevisualsampleddataset[which(abs(dfzscorevisualsampleddataset$oldbalanceOrg) > threshold), ] <- upperamount
+zscorevisualsampleddataset[which(abs(dfzscorevisualsampleddataset$step) > threshold), ] <- upperstep
+zscorevisualsampleddataset[which(abs(dfzscorevisualsampleddataset$oldbalanceOrg) > threshold), ] <- upperoldbalanceOrg
+zscorevisualsampleddataset[which(abs(dfzscorevisualsampleddataset$newbalanceOrig) > threshold), ] <- uppernewbalanceOrig
+zscorevisualsampleddataset[which(abs(dfzscorevisualsampleddataset$oldbalanceDest) > threshold), ] <- upperoldbalanceDest
+zscorevisualsampleddataset[which(abs(dfzscorevisualsampleddataset$newbalanceDest) > threshold), ] <- uppernewbalanceDest
+
+
+```
+
+```{r}
+scaled_dataset <- scale(numdataset)
+scaled_dataset
+```
+
+```{r}
+minMax <- function(x) {
+  (x - min(x)) / (max(x) - min(x))
+}
+ 
+#normalise data using custom function
+normaliseddataset <- as.data.frame(lapply(numdataset, minMax))
+head(normaliseddataset)
+```
+
+PCA
+```{r}
+pca_data<-dataset[,c("TARGET","step","amount","oldbalanceOrg","newbalanceOrig","oldbalanceDest","newbalanceDest")]
+
+pcaanalysed_data<-prcomp(pca_data[,-1],scale= T)
+pcaanalysed_data
+```
+
+```{r}
+plotdataset <- dataset %>% mutate(TARGET = ifelse(TARGET==1, "Fraud", "Normal"))
+
+plotdataset %>% ggplot(aes(x=NAME_FAMILY_STATUS, fill=factor(TARGET))) +geom_bar(position = "fill") +
+  labs(x="Family Status", y="Percentage", fill="target") +
+  coord_flip() +
+  scale_y_continuous(labels = scales::percent)
+
+```
+
+```{r}
+plotdataset %>% ggplot(aes(x=NAME_CONTRACT_TYPE, fill=factor(TARGET))) +geom_bar(position = "fill") +
+  labs(x="Contract Type", y="Percentage", fill="target") +
+  coord_flip() +
+  scale_y_continuous(labels = scales::percent)
+```
+
+```{r}
+plotdataset %>% ggplot(aes(x=NAME_INCOME_TYPE, fill=factor(TARGET))) +geom_bar(position = "fill") +
+  labs(x="Income Type", y="Percentage", fill="target") +
+  coord_flip() +
+  scale_y_continuous(labels = scales::percent)
+```
+
+```{r}
+plotdataset %>% ggplot(aes(x=NAME_EDUCATION_TYPE, fill=factor(TARGET))) +geom_bar(position = "fill") +
+  labs(x="Education Type", y="Percentage", fill="target") +
+  coord_flip() +
+  scale_y_continuous(labels = scales::percent)
+```
+
+```{r}
+plotdataset %>% ggplot(aes(x=NAME_HOUSING_TYPE, fill=factor(TARGET))) +geom_bar(position = "fill") +
+  labs(x="Housing Type", y="Percentage", fill="target") +
+  coord_flip() +
+  scale_y_continuous(labels = scales::percent)
+```
+
+```{r}
+plotdataset %>% ggplot(aes(x=FLAG_OWN_CAR, fill=factor(TARGET))) +geom_bar(position = "fill") +
+  labs(x="Own Car", y="Percentage", fill="target") +
+  coord_flip() +
+  scale_y_continuous(labels = scales::percent)
+```
+
+```{r}
+# , fig.width = 16, fig.height = 15}
+plotdataset <- plotdataset %>% mutate(FLAG_DOCUMENT_2  = ifelse(FLAG_DOCUMENT_2 ==1, "Present", "Unpresent"))
+
+plotdataset %>% ggplot(aes(x=FLAG_DOCUMENT_2, fill=factor(TARGET))) +geom_bar(position = "fill") +
+  labs(x="FLAG_DOCUMENT_2", y="Percentage", fill="target") +
+  coord_flip() +
+  scale_y_continuous(labels = scales::percent)
+```
+
+```{r}
+table(datasetFraud["type"])
+table(datasetnotFraud["type"])
+```
